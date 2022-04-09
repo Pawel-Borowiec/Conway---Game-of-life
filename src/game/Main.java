@@ -1,9 +1,9 @@
 package game;
 
 import javafx.application.Application;
-import javafx.event.ActionEvent;
-import javafx.event.EventHandler;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ColorPicker;
@@ -13,13 +13,17 @@ import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
+import static game.Status.Untapped;
+
 public class Main extends Application {
-    public static MyButton[][] przyciski= new MyButton[20][20];
-    static Background playerColor ;
-    static Label countLabel;
-    static Color basicColor = Color.DARKGRAY;
+    public static MyButton[][] tiles = new MyButton[20][20];
+    private Background playerColor ;
+    private static Label countLabel;
+    private static Color inactiveCellColor = Color.DARKGRAY;
     static int cellCount=0;
     static Slider slider;
+    Thread animationThread;
+    private boolean isSimulationGoing = false;
 
     public static void main(String[] args) {
         launch(args);
@@ -27,7 +31,7 @@ public class Main extends Application {
 
     @Override
     public void start(Stage primaryStage) throws Exception {
-        primaryStage.setTitle("Conway - Gra w życie");
+        primaryStage.setTitle("Conway - Game of Life");
         primaryStage.setWidth(1020);
         primaryStage.setHeight(840);
         addButtons();
@@ -48,7 +52,7 @@ public class Main extends Application {
         for(int i=0;i<20;i++) {
             for (int j = 0; j < 20; j++)
             {
-                przyciski[i][j]=createButton();
+                tiles[i][j]=createButton();
             }
         }
     }
@@ -58,7 +62,7 @@ public class Main extends Application {
         {
             for (int j=0;j<20;j++)
             {
-                gridPane.add(przyciski[i][j],i,j);
+                gridPane.add(tiles[i][j],i,j);
             }
         }
     }
@@ -66,205 +70,244 @@ public class Main extends Application {
     {
         MyButton button = new MyButton();
         button.setPrefSize(40,40);
-        button.setMinSize(40,40);
-        button.setMaxSize(40,40);
-        button.status=Status.Untapped;
-        button.setBackground(new Background(new BackgroundFill(basicColor,CornerRadii.EMPTY,Insets.EMPTY)));
-        button.setOnAction(new EventHandler<ActionEvent>() {
-            @Override
-            public void handle(ActionEvent event) {
-                if(button.status==Status.Untapped)
-                {
-                    button.setBackground(playerColor);
-                    button.status=Status.Tapped;
-                    cellCount++;
-                }else{
-                    button.setBackground(new Background(new BackgroundFill(basicColor,CornerRadii.EMPTY,Insets.EMPTY)));
-                    button.status=Status.Untapped;
-                    cellCount--;
-                }
-                countLabel.setText("Aktywne komorki: "+cellCount);
+        button.setStyle("-fx-border-color: #000; -fx-border-width: 1px;");
+        button.status= Untapped;
+        button.setBackground(new Background(new BackgroundFill(inactiveCellColor,CornerRadii.EMPTY,Insets.EMPTY)));
+        button.setOnAction(event -> {
+            if(button.status== Untapped)
+            {
+                button.setBackground(playerColor);
+                button.status=Status.Tapped;
+                cellCount++;
+            }else{
+                button.setBackground(new Background(new BackgroundFill(inactiveCellColor,CornerRadii.EMPTY,Insets.EMPTY)));
+                button.status= Untapped;
+                cellCount--;
             }
+            updateCellsCounter(cellCount);
         });
         return button;
+    }
+
+    private Button getNewTurnButton(){
+        Button button = new Button("Next Turn");
+        button.setPrefSize(200,60);
+        button.setOnAction(event -> {
+            invokeNextTurn();
+        });
+        return button;
+    }
+
+    private void invokeNextTurn(){
+        for(int i=0;i<20;i++)
+        {
+            for (int j=0;j<20;j++) {
+                checkSurroundingCells(j,i);
+            }
+        }
+        for(int i=0;i<20;i++)
+        {
+            for (int j=0;j<20;j++) {
+                updateCells(j,i);
+            }
+        }
+        updateCellsCounter(cellCount);
+    }
+    private ColorPicker getPlayerColorPicker(){
+        ColorPicker colorPicker = new ColorPicker();
+        colorPicker.setPrefSize(200,60);
+        colorPicker.setOnAction(event -> {
+            playerColor = new Background(new BackgroundFill(colorPicker.getValue(),CornerRadii.EMPTY, Insets.EMPTY));
+            for(int i=0;i<20;i++)
+            {
+                for (int j=0;j<20;j++) {
+                    if(tiles[i][j].status==Status.Tapped)
+                    {
+                        tiles[i][j].setBackground(playerColor);
+                    }
+                }
+            }
+        });
+        return colorPicker;
+    }
+
+    private ColorPicker getInactiveColorPicker(){
+        ColorPicker colorPicker = new ColorPicker();
+        colorPicker.setPrefSize(200,60);
+        colorPicker.setValue(inactiveCellColor);
+        colorPicker.setOnAction(event -> {
+            inactiveCellColor = colorPicker.getValue();
+            for(int i=0;i<20;i++)
+            {
+                for (int j=0;j<20;j++) {
+                    if(tiles[i][j].status== Untapped)
+                    {
+                        tiles[i][j].setBackground(new Background(new BackgroundFill(colorPicker.getValue(),CornerRadii.EMPTY, Insets.EMPTY)));
+                    }
+                }
+            }
+        });
+        return colorPicker;
+    }
+    private Label getCommandPanelLabel(String text){
+        Label label = new Label(text);
+        label.setPrefSize(200,60);
+        label.setAlignment(Pos.CENTER);
+        label.setStyle("-fx-background-color: lightgrey");
+        return label;
     }
 
     public VBox getCommandPanel()
     {
         VBox hBox = new VBox();
         slider=getSlider();
-        Button button = new Button("Kolejna Tura");
-        button.setPrefSize(200,60);
-        button.setMinSize(200,60);
-        button.setMaxSize(200,60);
-        countLabel = new Label("Aktywne Komórki: ");
-        countLabel.setPrefSize(200,60);
-        countLabel.setMinSize(200,60);
-        countLabel.setMaxSize(200,60);
-        countLabel.setStyle("-fx-background-color: lightgrey");
-        button.setOnAction(new EventHandler<ActionEvent>() {
-            @Override
-            public void handle(ActionEvent event) {
-                for(int i=0;i<20;i++)
-                {
-                    for (int j=0;j<20;j++) {
-                        sprawdz(j,i);
-                    }
-                }
-                for(int i=0;i<20;i++)
-                {
-                    for (int j=0;j<20;j++) {
-                        nastaw(j,i);
-                    }
-                }
-                countLabel.setText("Aktywne komorki: "+cellCount);
-            }
-        });
-
-        ColorPicker colorPicker = new ColorPicker();
-        colorPicker.setOnAction(new EventHandler<ActionEvent>() {
-            @Override
-            public void handle(ActionEvent event) {
-                BackgroundFill backgroundFill=new BackgroundFill(colorPicker.getValue(),CornerRadii.EMPTY, Insets.EMPTY);
-                Background background =new Background(backgroundFill);
-                playerColor=background;
-                for(int i=0;i<20;i++)
-                {
-                    for (int j=0;j<20;j++) {
-                        if(przyciski[i][j].status==Status.Tapped)
-                        {
-                            przyciski[i][j].setBackground(playerColor);
-                        }
-                    }
-                }
-            }
-        });
-
-        // playerColor=new Background(backgroundFill);
-        hBox.getChildren().addAll(button,slider,getRandomButton(),countLabel, colorPicker);
+        Button button = getNewTurnButton();
+        countLabel = getCommandPanelLabel("Active Cells: 0");
+        hBox.getChildren().addAll(
+                button,
+                getCommandPanelLabel(" % of alive cells for Randomize"),
+                slider,
+                getRandomButton(),
+                countLabel,
+                getCommandPanelLabel("\"Alive\" cell's color"),
+                getPlayerColorPicker(),
+                getCommandPanelLabel("\"Dead\" cell's color"),
+                getInactiveColorPicker(),
+                getStartSimulationButton(),
+                getStopSimulationButton());
         return hBox;
     }
-    public static void sprawdz(int x,int y)
+    public static void checkSurroundingCells(int x, int y)
     {
-        int count =0;
-        if(x!=0) {
-            if(przyciski[x-1][y].status==Status.Tapped)
-            {
-                // System.out.println("lewo");
-                count++;
+        int livingCellsCount =0;
+        if(x!=0){
+            if(tiles[x-1][y].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        if( y!=0 ) {
-            if(przyciski[x][y-1].status==Status.Tapped)
-            {
-                // System.out.println("dol");
-                count++;
+        if( y!=0 ){
+            if(tiles[x][y-1].status==Status.Tapped){
+                livingCellsCount++;
             }
 
         }
-        if(x!=przyciski.length-1) {
-            if(przyciski[x+1][y].status==Status.Tapped)
-            {
-                //System.out.println("prawo");
-                count++;
+        if(x!=tiles.length-1){
+            if(tiles[x+1][y].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        if(y!=przyciski.length-1) {
-            if(przyciski[x][y+1].status==Status.Tapped)
-            {
-                // System.out.println("dol");
-                count++;
+        if(y!=tiles.length-1){
+            if(tiles[x][y+1].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        //if(!(x==0 || y==przyciski.length-1))
         if(!(x==0 || y==0))
         {
-            //System.out.println("policzono w lewy gorny rog");
-            if(przyciski[x-1][y-1].status==Status.Tapped)
-            {
-
-                count++;
+            if(tiles[x-1][y-1].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        if(!(x==przyciski.length-1 || y==0))
-        {
-            //System.out.println("policzono w prawy gorny rog");
-            if(przyciski[x+1][y-1].status==Status.Tapped)
-            {
-                count++;
+        if(!(x==tiles.length-1 || y==0)){
+            if(tiles[x+1][y-1].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        if(!(x==przyciski.length-1 || y==przyciski.length-1))
-        {
-            //System.out.println("policzono w prawy doł");
-            if(przyciski[x+1][y+1].status==Status.Tapped)
-            {
-
-                count++;
+        if(!(x==tiles.length-1 || y==tiles.length-1)){
+            if(tiles[x+1][y+1].status==Status.Tapped){
+                livingCellsCount++;
             }
         }
-        if(!(x==0 || y==przyciski.length-1))
-        {
-            //System.out.println("policzono w lewy doł");
-            if(przyciski[x-1][y+1].status==Status.Tapped)
-            {
-                count++;
+        if(!(x==0 || y==tiles.length-1)){
+            if(tiles[x-1][y+1].status==Status.Tapped){
+                livingCellsCount++;
             }
-
         }
 
-        przyciski[x][y].livingCellsCount=count;
-        countLabel.setText("Aktywne komórki: "+cellCount);
+        tiles[x][y].livingCellsCount= livingCellsCount;
+        updateCellsCounter(cellCount);
     }
-    public void nastaw (int x, int y)
+    private void updateCells(int x, int y)
     {
-        if(przyciski[x][y].livingCellsCount==3 && przyciski[x][y].status==Status.Untapped) {
-            przyciski[x][y].status=Status.Tapped;
+        if(tiles[x][y].livingCellsCount==3 && tiles[x][y].status== Untapped) {
+            tiles[x][y].status=Status.Tapped;
             cellCount++;
-            przyciski[x][y].setBackground(playerColor);
-        }else if(!(przyciski[x][y].livingCellsCount==3 || przyciski[x][y].livingCellsCount==2) &&przyciski[x][y].status==Status.Tapped)
+            tiles[x][y].setBackground(playerColor);
+        }else if(!(tiles[x][y].livingCellsCount==3 || tiles[x][y].livingCellsCount==2) &&tiles[x][y].status==Status.Tapped)
         {
-            przyciski[x][y].status=Status.Untapped;
-            BackgroundFill backgroundFill =new BackgroundFill(basicColor,CornerRadii.EMPTY, Insets.EMPTY);
+            tiles[x][y].status= Untapped;
+            BackgroundFill backgroundFill =new BackgroundFill(inactiveCellColor,CornerRadii.EMPTY, Insets.EMPTY);
             Background background =new Background(backgroundFill);
-            przyciski[x][y].setBackground(background);
+            tiles[x][y].setBackground(background);
             cellCount--;
 
         }
-        przyciski[x][y].livingCellsCount=0;
+        tiles[x][y].livingCellsCount=0;
     }
-    public Button getRandomButton()
-    {
-        Button button = new Button("Generuj losowo");
+    private Button getStartSimulationButton(){
+        Button button = new Button("Start simulation");
         button.setPrefSize(200,60);
-        button.setMinSize(200,60);
-        button.setMaxSize(200,60);
-        button.setOnAction(new EventHandler<ActionEvent>() {
-            @Override
-            public void handle(ActionEvent event) {
-                int licznik=0;
-                int random;
-                for(int i=0;i<20;i++)
-                {
-                    for (int j=0;j<20;j++) {
-                        random= (int)(Math.random()*100);
-                        if(random<slider.getValue())
-                        {
-                            przyciski[i][j].status=Status.Tapped;
-                            przyciski[i][j].setBackground(playerColor);
-                            licznik++;
-                        }else
-                        {
-                            przyciski[i][j].status=Status.Untapped;
-                            przyciski[i][j].setBackground(new Background(new BackgroundFill(basicColor, CornerRadii.EMPTY, Insets.EMPTY)));
-                        }
+        button.setOnAction(event -> {
+            isSimulationGoing = true;
+            Runnable simulationRunnable = () -> {
+                while (isSimulationGoing) {
+
+                    Platform.runLater(() -> invokeNextTurn());
+                    try {
+                        Thread.sleep((1000));
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
                 }
-                countLabel.setText("Aktywne komórki: "+licznik);
-                cellCount=licznik;
+            };
+            animationThread = new Thread(simulationRunnable);
+            animationThread.start();
+        });
+        return button;
+    }
+
+    private Button getStopSimulationButton(){
+        Button button = new Button("Stop simulation");
+        button.setPrefSize(200,60);
+        button.setOnAction(event -> {
+            try{
+                isSimulationGoing = false;
+                animationThread.interrupt();
+            }catch (Exception e){
+
             }
         });
         return button;
+    }
+    private Button getRandomButton()
+    {
+        Button button = new Button("Randomize");
+        button.setPrefSize(200,60);
+        button.setOnAction(event -> {
+            int counter=0;
+            int random;
+            for(int i=0;i<20;i++)
+            {
+                for (int j=0;j<20;j++) {
+                    random= (int)(Math.random()*100);
+                    if(random<slider.getValue())
+                    {
+                        tiles[i][j].status=Status.Tapped;
+                        tiles[i][j].setBackground(playerColor);
+                        counter++;
+                    }else
+                    {
+                        tiles[i][j].status= Untapped;
+                        tiles[i][j].setBackground(new Background(new BackgroundFill(inactiveCellColor, CornerRadii.EMPTY, Insets.EMPTY)));
+                    }
+                }
+            }
+            updateCellsCounter(counter);
+            cellCount=counter;
+        });
+        return button;
+    }
+    private static void updateCellsCounter(int x){
+        countLabel.setText("Active Cells: "+x);
     }
     public Slider getSlider()
     {
